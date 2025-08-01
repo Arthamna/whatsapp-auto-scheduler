@@ -1,6 +1,4 @@
-flask
-python-dotenv
-aiohttp
-requests
-waitress
-pg8000
+python-telegram-bot==20.7
+pg8000==1.30.3
+python-dotenv==1.0.0
+schedule==1.2.0
