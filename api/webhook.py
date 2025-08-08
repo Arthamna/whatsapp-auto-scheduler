@@ -6,8 +6,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import pg8000
 import requests
-from http.server import BaseHTTPRequestHandler, HTTPServer
-# import threading
+from http.server import BaseHTTPRequestHandler
 from dotenv import load_dotenv
 
 # Import your existing modules
@@ -62,7 +61,6 @@ class TelegramBot:
             elif message_text.lower().startswith('hapus'):
                 return self.delete_activity(message_text)
             else:
-                # Ignore unrecognized messages
                 return None
                 
         except Exception as e:
@@ -253,39 +251,29 @@ class TelegramBot:
 
 # Global bot instance
 bot_instance = None
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    logger.error("BOT_TOKEN not set!")
+bot_instance = TelegramBot(BOT_TOKEN)
 
-class WebhookHandler(BaseHTTPRequestHandler):
+class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
-            # Read the request body
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             
-            # Parse JSON data
             data = json.loads(post_data.decode('utf-8'))
-            logger.info(f"Received webhook data: {json.dumps(data, indent=2)}")
             
-            global bot_instance
+            bot = TelegramBot()
             
-            # Check if it's a message update
             if 'message' in data and 'text' in data['message']:
                 message_text = data['message']['text']
-                chat_id = data['message']['chat']['id']
-                user_name = data['message']['from'].get('first_name', 'User')
+                response = bot.handle_message(message_text)
                 
-                logger.info(f"Received message from {user_name} (ID: {chat_id}): {message_text}")
-                
-                # Store chat_id for future notifications
-                bot_instance.chat_id = chat_id
-                
-                # Handle the message
-                response = bot_instance.handle_message(message_text, chat_id)
-                
-                # Send response if there's one
                 if response:
-                    bot_instance.send_message(chat_id, response)
+                    bot.send_message(response)
             
-            # Send success response
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -304,44 +292,3 @@ class WebhookHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({"status": "Bot is running"}).encode())
-
-    def log_message(self, format, *args):
-        # Override to use our logger instead of default stderr logging
-        logger.info(f"HTTP: {format % args}")
-
-
-def run_server(port=8000):
-    """Run the HTTP server for webhook"""
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, WebhookHandler)
-    logger.info(f"Starting server on port {port}...")
-    logger.info(f"Webhook URL will be: http://localhost:{port}")
-    httpd.serve_forever()
-
-
-def main():
-    load_dotenv()
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    # print(BOT_TOKEN)
-    if not BOT_TOKEN:
-        logger.error("BOT_TOKEN environment variable is required!")
-        return
-    
-    global bot_instance
-    bot_instance = TelegramBot(BOT_TOKEN)
-    
-    port = 8000
-    
-    logger.info("Bot initialized successfully!")
-    logger.info("Starting webhook server...")
-    
-    try:
-        run_server(port)
-    except KeyboardInterrupt:
-        logger.info("Server stopped by user")
-    except Exception as e:
-        logger.error(f"Server error: {str(e)}")
-
-
-if __name__ == "__main__":
-    main()

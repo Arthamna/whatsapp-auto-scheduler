@@ -5,11 +5,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import requests
 from http.server import BaseHTTPRequestHandler
-
-# Import your existing modules
 from api.database import ScheduleManager
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -18,12 +15,13 @@ class ScheduleChecker:
         self.bot_token = os.getenv("BOT_TOKEN")
         self.bot_username = os.getenv("BOT_USERNAME")
         self.manager = ScheduleManager()
+        self.chat_id = None
 
-    def send_message(self, text, parse_mode="Markdown"):
+    def send_message(self, text, chat_id, parse_mode="Markdown"):
         """Send message to Telegram using API"""
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         payload = {
-            # "chat_id": self.chat_id,
+            "chat_id": chat_id,
             "text": text,
             "parse_mode": parse_mode
         }
@@ -80,17 +78,12 @@ class ScheduleChecker:
         
         return message
 
-# Vercel handler for schedule checking
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
-            # Initialize schedule checker
             checker = ScheduleChecker()
-            
-            # Run schedule check
             result = checker.check_schedules()
             
-            # Send success response
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()

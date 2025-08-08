@@ -4,6 +4,7 @@ __pycache__/
 # C extensions
 *.so
 test*
+run*
 # Distribution / packaging
 .Python
 env/
