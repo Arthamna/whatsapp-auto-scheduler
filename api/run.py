@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from dotenv import load_dotenv
 
 # Import your existing modules
-from database import ScheduleManager
+from api.database import ScheduleManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -7,7 +7,7 @@ import requests
 from http.server import BaseHTTPRequestHandler
 
 # Import your existing modules
-from database import ScheduleManager
+from api.database import ScheduleManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
