@@ -79,7 +79,8 @@ class ScheduleChecker:
         return message
 
 class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
+    # def do_POST(self):
+    def do_HEAD(self):
         try:
             checker = ScheduleChecker()
             result = checker.check_schedules()
@@ -96,9 +97,20 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode())
 
+
     def do_GET(self):
-        # Health check endpoint
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({"status": "Schedule checker is running"}).encode())
+        try:
+            checker = ScheduleChecker()
+            result = checker.check_schedules()
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+            
+        except Exception as e:
+            logger.error(f"Error in schedule check handler: {str(e)}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode())
