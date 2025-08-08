@@ -1,66 +1,73 @@
-import os
+import json
 import re
 import logging
-import asyncio
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import pg8000
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
-from telegram.constants import ParseMode
+import requests
+from http.server import BaseHTTPRequestHandler, HTTPServer
+# import threading
 from dotenv import load_dotenv
 
 # Import your existing modules
 from database import ScheduleManager
-import schedule
-import time
-import threading
 
 # Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class TelegramScheduleBot:
-    def __init__(self, token: str, chat_id: str):
-        self.token = token
-        self.chat_id = chat_id
+class TelegramBot:
+    def __init__(self, token: str):
+        self.bot_token = token  
+        self.bot_username = os.getenv("BOT_USERNAME")
+        self.chat_id = None
         self.manager = ScheduleManager()
-        self.application = Application.builder().token(token).build()
-        self._setup_handlers()
-        
-    def _setup_handlers(self):
-        self.application.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND, 
-            self.handle_message
-        ))
 
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        message_text = update.message.text.strip()
+    def send_message(self, chat_id, text, parse_mode="Markdown"):
+        """Send message to Telegram using API"""
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode
+        }
         
         try:
+            response = requests.post(url, json=payload)
+            if response.status_code != 200:
+                logger.error(f"Failed to send message: {response.text}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Error sending message: {str(e)}")
+            return False
+
+    def handle_message(self, message_text, chat_id):
+        """Handle incoming message and return response"""
+        message_text = message_text.strip()
+        
+        try:
+            # Route message to appropriate handler
             if message_text.lower().startswith('tambah'):
-                response = self.process_add_command(message_text)
+                return self.process_add_command(message_text)
             elif message_text.lower() in ('jadwal hari ini', 'hari ini') :
-                response = self.today()
-            elif message_text.lower() in ('jadwal minggu ini', 'minggu ini') :
-                response = self.week()
+                return self.today()
+            elif message_text.lower() in ('jadwal minggu ini', 'minggu ini'):
+                return self.week()
             elif message_text.lower().startswith(('ganti nama', 'update nama')):
-                response = self.update_name(message_text)
+                return self.update_name(message_text)
             elif message_text.lower().startswith(('ganti tanggal', 'update tanggal')):
-                response = self.update_date(message_text)
+                return self.update_date(message_text)
             elif message_text.lower().startswith('hapus'):
-                response = self.delete_activity(message_text)
+                return self.delete_activity(message_text)
             else:
-                return
-            
-            await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
-            
+                # Ignore unrecognized messages
+                return None
+                
         except Exception as e:
             logger.error(f"Error handling message: {str(e)}")
-            await update.message.reply_text("Terjadi kesalahan saat memproses perintah.")
+            return "Terjadi kesalahan saat memproses perintah."
 
     def process_add_command(self, message_body):
         pattern = r'^tambah(\s+.+?)\s+jam\s+(\d{1,2}:\d{2})(?:\s+tanggal\s+(\d{1,2})(?:\s+(\w+))?)?$'
@@ -201,20 +208,23 @@ class TelegramScheduleBot:
         except Exception as e:
             return f"Unexpected error: {e}"
 
-    # Schedule checking and notification functions
-    async def async_checking(self):
+    # Schedule checking functions
+    def check_schedules(self):
         """Check schedules and send notifications"""
         try:
             current_time = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%Y-%m-%d %H:%M:%S")
             logger.info(f"{current_time} : Running schedule check")
             
             schedule_data = self.manager.check_schedules()
-            await self.process_schedule_data(schedule_data)
+            self.process_schedule_data(schedule_data)
+            
+            return {"status": "success", "message": "Schedule check completed"}
             
         except Exception as e:
-            logger.error(f"Error in async_checking: {str(e)}")
+            logger.error(f"Error in check_schedules: {str(e)}")
+            return {"status": "error", "message": str(e)}
 
-    async def process_schedule_data(self, schedule_data):
+    def process_schedule_data(self, schedule_data):
         """Process schedule data and send notifications"""
         upcoming_schedules = schedule_data.get("upcoming", [])
         if not upcoming_schedules:
@@ -225,7 +235,7 @@ class TelegramScheduleBot:
         try:
             current_message = self.format_schedule_message(upcoming_schedules)
             logger.info(f"Sending notification for current schedules: {upcoming_schedules}")
-            await self.send_schedule_notification(current_message)
+            self.send_message(current_message)
         except Exception as e:
             logger.error(f"Error processing current schedules: {str(e)}")
 
@@ -241,61 +251,97 @@ class TelegramScheduleBot:
         
         return message
 
-    async def send_schedule_notification(self, message):
-        """Send notification to Telegram chat"""
-        try:
-            await self.application.bot.send_message(
-                chat_id=self.chat_id,
-                text=message,
-                parse_mode=ParseMode.MARKDOWN
-            )
-            logger.info("Notification sent successfully")
-        except Exception as e:
-            logger.error(f"Error sending notification: {str(e)}")
+# Global bot instance
+bot_instance = None
 
-    def start_scheduler(self):
-        """Start the scheduler in a separate thread"""
-        def run_scheduler():
-            # Schedule the check to run every 30 minutes
-            schedule.every(30).minutes.do(self.schedule_check_wrapper)
+class WebhookHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            # Read the request body
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
             
-            while True:
-                schedule.run_pending()
-                time.sleep(60)  # Check every minute
-        
-        scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-        scheduler_thread.start()
-        logger.info("Scheduler started successfully")
-
-    def schedule_check_wrapper(self):
-        """Wrapper to run async checking in sync context"""
-        try:
-            # Create new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.async_checking())
-            loop.close()
+            # Parse JSON data
+            data = json.loads(post_data.decode('utf-8'))
+            logger.info(f"Received webhook data: {json.dumps(data, indent=2)}")
+            
+            global bot_instance
+            
+            # Check if it's a message update
+            if 'message' in data and 'text' in data['message']:
+                message_text = data['message']['text']
+                chat_id = data['message']['chat']['id']
+                user_name = data['message']['from'].get('first_name', 'User')
+                
+                logger.info(f"Received message from {user_name} (ID: {chat_id}): {message_text}")
+                
+                # Store chat_id for future notifications
+                bot_instance.chat_id = chat_id
+                
+                # Handle the message
+                response = bot_instance.handle_message(message_text, chat_id)
+                
+                # Send response if there's one
+                if response:
+                    bot_instance.send_message(chat_id, response)
+            
+            # Send success response
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode())
+            
         except Exception as e:
-            logger.error(f"Error in schedule check wrapper: {str(e)}")
+            logger.error(f"Error in webhook handler: {str(e)}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
 
-    def run(self):
-        """Start the bot"""
-        logger.info("Starting Telegram Schedule Bot...")
-        
-        # Start the scheduler
-        self.start_scheduler()
-        
-        # Start the bot
-        self.application.run_polling(drop_pending_updates=True)
+    def do_GET(self):
+        # Health check endpoint
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"status": "Bot is running"}).encode())
+
+    def log_message(self, format, *args):
+        # Override to use our logger instead of default stderr logging
+        logger.info(f"HTTP: {format % args}")
+
+
+def run_server(port=8000):
+    """Run the HTTP server for webhook"""
+    server_address = ('', port)
+    httpd = HTTPServer(server_address, WebhookHandler)
+    logger.info(f"Starting server on port {port}...")
+    logger.info(f"Webhook URL will be: http://localhost:{port}")
+    httpd.serve_forever()
+
 
 def main():
     load_dotenv()
     BOT_TOKEN = os.getenv("BOT_TOKEN")
-    BOT_USERNAME = os.getenv("BOT_USERNAME")    
+    # print(BOT_TOKEN)
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN environment variable is required!")
+        return
+    
+    global bot_instance
+    bot_instance = TelegramBot(BOT_TOKEN)
+    
+    port = 8000
+    
+    logger.info("Bot initialized successfully!")
+    logger.info("Starting webhook server...")
+    
+    try:
+        run_server(port)
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    except Exception as e:
+        logger.error(f"Server error: {str(e)}")
 
-    # Create and run bot
-    bot = TelegramScheduleBot(BOT_TOKEN, BOT_USERNAME)
-    bot.run()
 
 if __name__ == "__main__":
     main()
