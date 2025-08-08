@@ -168,7 +168,6 @@ class ScheduleManager:
         
         return all_schedules
     
-    # check every 30 min
     def check_schedules(self) -> Dict[str, List[Dict[str, str]]]:
 
         now = datetime.now(ZoneInfo("Asia/Jakarta"))
