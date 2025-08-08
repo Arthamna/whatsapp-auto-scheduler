@@ -19,9 +19,12 @@ logger = logging.getLogger(__name__)
 class TelegramBot:
     def __init__(self, token: str):
         self.bot_token = token  
-        self.bot_username = os.getenv("BOT_USERNAME")
         self.chat_id = None
-        self.manager = ScheduleManager()
+        self.manager = None
+
+    def _ensure_manager(self):
+        if self.manager is None:
+            self.manager = ScheduleManager()  
 
     def send_message(self, chat_id, text, parse_mode="Markdown"):
         """Send message to Telegram using API"""
@@ -45,9 +48,9 @@ class TelegramBot:
     def handle_message(self, message_text, chat_id):
         """Handle incoming message and return response"""
         message_text = message_text.strip()
+        self._ensure_manager()
         
         try:
-            # Route message to appropriate handler
             if message_text.lower().startswith('tambah'):
                 return self.process_add_command(message_text)
             elif message_text.lower() in ('jadwal hari ini', 'hari ini') :
@@ -233,7 +236,7 @@ class TelegramBot:
         try:
             current_message = self.format_schedule_message(upcoming_schedules)
             logger.info(f"Sending notification for current schedules: {upcoming_schedules}")
-            self.send_message(current_message)
+            self.send_message(self.chat_id, current_message)
         except Exception as e:
             logger.error(f"Error processing current schedules: {str(e)}")
 
@@ -249,13 +252,11 @@ class TelegramBot:
         
         return message
 
-# Global bot instance
-bot_instance = None
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN not set!")
-bot_instance = TelegramBot(BOT_TOKEN)
+bot = TelegramBot(BOT_TOKEN)
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -265,14 +266,13 @@ class handler(BaseHTTPRequestHandler):
             
             data = json.loads(post_data.decode('utf-8'))
             
-            bot = TelegramBot()
-            
             if 'message' in data and 'text' in data['message']:
+                chat_id = data['message']['chat']['id']
                 message_text = data['message']['text']
-                response = bot.handle_message(message_text)
+                response = bot.handle_message(message_text, chat_id)
                 
                 if response:
-                    bot.send_message(response)
+                    bot.send_message(chat_id, response)
             
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -287,7 +287,6 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": str(e)}).encode())
 
     def do_GET(self):
-        # Health check endpoint
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()

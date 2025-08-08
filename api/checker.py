@@ -62,7 +62,7 @@ class ScheduleChecker:
         try:
             current_message = self.format_schedule_message(upcoming_schedules)
             logger.info(f"Sending notification for current schedules: {upcoming_schedules}")
-            self.send_message(current_message)
+            self.send_message(self.chat_id, current_message)
         except Exception as e:
             logger.error(f"Error processing current schedules: {str(e)}")
 
