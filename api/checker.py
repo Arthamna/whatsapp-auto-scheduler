@@ -15,7 +15,7 @@ class ScheduleChecker:
         self.bot_token = os.getenv("BOT_TOKEN")
         self.bot_username = os.getenv("BOT_USERNAME")
         self.manager = ScheduleManager()
-        self.chat_id = None
+        self.chat_id = os.getenv("CHAT_ID")
 
     def send_message(self, text, chat_id, parse_mode="Markdown"):
         """Send message to Telegram using API"""
