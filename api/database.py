@@ -9,7 +9,6 @@ class ScheduleManager:
     
     def __init__(self):
         self._init_db()
-
         self._month_names = {
             1: 'januari',
             2: 'februari',
