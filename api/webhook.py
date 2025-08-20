@@ -8,11 +8,8 @@ import pg8000
 import requests
 from http.server import BaseHTTPRequestHandler
 from dotenv import load_dotenv
-
-# Import your existing modules
 from api.database import ScheduleManager
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -27,7 +24,6 @@ class TelegramBot:
             self.manager = ScheduleManager()  
 
     def send_message(self, chat_id, text, parse_mode="Markdown"):
-        """Send message to Telegram using API"""
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         payload = {
             "chat_id": chat_id,
@@ -46,10 +42,8 @@ class TelegramBot:
             return False
 
     def handle_message(self, message_text, chat_id):
-        """Handle incoming message and return response"""
         message_text = message_text.strip()
         self._ensure_manager()
-        
         try:
             if message_text.lower().startswith('tambah'):
                 return self.process_add_command(message_text)
@@ -209,9 +203,7 @@ class TelegramBot:
         except Exception as e:
             return f"Unexpected error: {e}"
 
-    # Schedule checking functions
     def check_schedules(self):
-        """Check schedules and send notifications"""
         try:
             current_time = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%Y-%m-%d %H:%M:%S")
             logger.info(f"{current_time} : Running schedule check")
@@ -226,7 +218,6 @@ class TelegramBot:
             return {"status": "error", "message": str(e)}
 
     def process_schedule_data(self, schedule_data):
-        """Process schedule data and send notifications"""
         upcoming_schedules = schedule_data.get("upcoming", [])
         if not upcoming_schedules:
             logger.info("No schedules found, skipping notification")
@@ -241,7 +232,6 @@ class TelegramBot:
             logger.error(f"Error processing current schedules: {str(e)}")
 
     def format_schedule_message(self, schedules):
-        """Format schedule message for notification"""
         header = "⚠️ *JADWAL MENDATANG :*\n\n"
         
         message = header
